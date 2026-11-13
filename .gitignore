@@ -1,0 +1,11 @@
+/target/
+.DS_Store
+*.log
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.sqlite3
+*.sqlite3-*
+

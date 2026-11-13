@@ -770,7 +770,7 @@ async fn agent_call(state: &AppState, provider: &str, mut payload: Value) -> Res
         body.insert("tools".into(), agent_tools());
         body.insert("tool_choice".into(), json!("auto"));
         if let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) {
-            messages.insert(0, json!({"role":"system","content":"You are the Thomas AI planner. Use the provided local tools to inspect files, update code, run tests, and inspect Git. Prefer tools over guessing. After tools finish, give a concise answer describing what you found or changed."}));
+            messages.insert(0, json!({"role":"system","content":"You are Thomas AI's local-computer agent. You have access to tools that execute on the user's Mac. When the user asks you to inspect files, edit code, run commands, test software, or inspect Git, you MUST call the relevant local tool before answering. Do not claim you lack access. Tool results are local and must be used to produce the final answer. Use read/list tools before modifying files when practical, and describe completed actions concisely."}));
         }
     }
     for _ in 0..6 {
@@ -866,8 +866,14 @@ async fn chat(
     Json(req): Json<ChatRequest>,
 ) -> Result<Response, (axum::http::StatusCode, Json<Value>)> {
     let selected = requested_provider(&req, &headers, &state.cfg.provider);
+    let agent = agent_enabled(&req);
     let score = difficulty(&req);
-    let preferred = if selected == "auto" {
+    let preferred = if agent {
+        // The bundled MLX model is excellent for local inference but does not
+        // reliably emit tool calls. Use the verified free NVIDIA Nemotron
+        // planner for agent requests; all tools still execute locally here.
+        "nvidia"
+    } else if selected == "auto" {
         let local_load = state
             .local_inflight
             .load(std::sync::atomic::Ordering::Relaxed);
@@ -907,7 +913,6 @@ async fn chat(
             body.insert("model".into(), json!(routed_nvidia_model(&state, score)));
         }
     }
-    let agent = agent_enabled(&req);
     if req.stream {
         if agent {
             return Err((
